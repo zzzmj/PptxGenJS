@@ -143,7 +143,7 @@ export function encodeSlideMediaRels(layout: PresSlide | SlideLayout): Array<Pro
 				if (isNode && !fs) await loadNodeDeps()
 				if (isNode && fs) {
 					// console.log('Sorry, SVG is not supported in Node (more info: https://github.com/gitbrent/PptxGenJS/issues/401)')
-					rel.data = IMG_BROKEN
+					// rel.data = await svgToPng(rel.path)
 					imageProms.push(Promise.resolve('done'))
 				} else {
 					imageProms.push(createSvgPngPreview(rel))

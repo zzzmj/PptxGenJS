@@ -420,21 +420,10 @@ export function addImageDefinition(target: PresSlide, opt: ImageProps): void {
 
 	// STEP 1: Set extension
 	// NOTE: Split to address URLs with params (eg: `path/brent.jpg?someParam=true`)
-	let strImgExtn = (
-		strImagePath
-			.substring(strImagePath.lastIndexOf('/') + 1)
-			.split('?')[0]
-			.split('.')
-			.pop()
-			.split('#')[0] || 'png'
-	).toLowerCase()
+	let strImgExtn = getFileExtension(strImagePath, strImageData).toLowerCase()
 
-	// However, pre-encoded images can be whatever mime-type they want (and good for them!)
-	if (strImageData && /image\/(\w+);/.exec(strImageData) && /image\/(\w+);/.exec(strImageData).length > 0) {
-		strImgExtn = /image\/(\w+);/.exec(strImageData)[1]
-	} else if (strImageData?.toLowerCase().includes('image/svg+xml')) {
-		strImgExtn = 'svg'
-	}
+	// 规范化: PPT 需要 jpeg 而不是 jpg
+	if (strImgExtn === 'jpg') strImgExtn = 'jpeg'
 
 	// STEP 2: Set type/path
 	newObject._type = SLIDE_OBJECT_TYPES.image
@@ -558,7 +547,19 @@ export function addMediaDefinition(target: PresSlide, opt: MediaProps): void {
 
 	// FIXME: 20190707
 	// strType = strData ? strData.split(';')[0].split('/')[0] : strType
-	strExtn = opt.extn || (strData ? strData.split(';')[0].split('/')[1] : strPath.split('.').pop()) || 'mp3'
+	// 新逻辑: 使用辅助函数解析后缀
+	let rawExt = getFileExtension(strPath, strData)
+
+	// 如果没解析出来，给一个默认值 (根据 strType 稍微智能一点，或者默认 mp3)
+	if (!rawExt) {
+		rawExt = 'mp3'
+	}
+
+	// 规范化: ppt 一般需要 jpeg 而不是 jpg
+	if (rawExt === 'jpg') rawExt = 'jpeg'
+
+	// 优先使用用户传入的 extn，否则使用解析出来的
+	strExtn = opt.extn || rawExt
 
 	// STEP 2: Set type, media
 	slideData.mtype = strType
@@ -1133,7 +1134,39 @@ export function addPlaceholdersToSlideLayouts(slide: PresSlide): void {
 }
 
 /* -------------------------------------------------------------------------------- */
+/**
+ * 辅助函数：更强健的获取图片扩展名
+ */
+function getFileExtension(path: string, data?: string | null): string {
+	// 1. 尝试从 Base64 Data URI 中获取 MIME type
+	if (data && data.startsWith('data:')) {
+		// 注意：正则增加了 [+] 以支持 image/svg+xml
+		const match = data.match(/^data:image\/([a-zA-Z0-9-+]+);/i)
+		if (match && match[1]) {
+			const ext = match[1].toLowerCase()
+			// 特殊处理: 如果是 svg+xml，返回 svg 作为文件后缀
+			return ext === 'svg+xml' ? 'svg' : ext
+		}
+	}
 
+	// 2. 尝试从 URL 参数中解析 OSS/CDN 的转换格式
+	if (path) {
+		const ossMatch = path.match(/format,([a-zA-Z0-9]+)/)
+		if (ossMatch && ossMatch[1]) return ossMatch[1]
+
+		const fmtMatch = path.match(/[?&]fmt=([a-zA-Z0-9]+)/)
+		if (fmtMatch && fmtMatch[1]) return fmtMatch[1]
+	}
+
+	// 3. 标准做法：去除 URL 参数，获取文件后缀
+	if (path) {
+		const cleanPath = path.split('?')[0].split('#')[0] // 同时去除 ? 和 #
+		const ext = cleanPath.split('.').pop()
+		if (ext && ext !== cleanPath) return ext
+	}
+
+	return ''
+}
 /**
  * Adds a background image or color to a slide definition.
  * @param {BackgroundProps} props - color string or an object with image definition
@@ -1155,11 +1188,18 @@ export function addBackgroundDefinition(props: BackgroundProps, target: SlideLay
 
 	// B: Handle media
 	if (props && (props.path || props.data)) {
-		// Allow the use of only the data key (`path` isnt reqd)
-		props.path = props.path || 'preencoded.png'
-		let strImgExtn = (props.path.split('.').pop() || 'png').split('?')[0] // Handle "blah.jpg?width=540" etc.
-		if (strImgExtn === 'jpg') strImgExtn = 'jpeg' // base64-encoded jpg's come out as "data:image/jpeg;base64,/9j/[...]", so correct exttnesion to avoid content warnings at PPT startup
+		// --------------- 修改开始 ---------------
+		// 使用新的辅助函数获取原始扩展名
+		const rawExt = getFileExtension(props.path, props.data).toLowerCase()
 
+		// 规范化扩展名 (PPT 对 jpg 的处理比较特殊)
+		let strImgExtn = rawExt
+		if (strImgExtn === 'jpg') strImgExtn = 'jpeg'
+
+		// 如果解析出来是 webp (且没有被 OSS 转为 png)，但在 PPT 中 webp 支持较差，
+		// 你可能需要在这里做额外的处理或警告，但如果 OSS 已经转了 format,png，
+		// 上面的 getImageExtension 就会返回 'png'，从而解决了你的问题。
+		// --------------- 修改结束 ---------------
 		target._relsMedia = target._relsMedia || []
 		const intRels = target._relsMedia.length + 1
 		// NOTE: `Target` cannot have spaces (eg:"Slide 1-image-1.jpg") or a "presentation is corrupt" warning comes up
