@@ -354,6 +354,13 @@ export interface TextBaseProps {
 	 */
 	color?: Color
 	/**
+	 * Text gradient fill
+	 * - when present, takes precedence over `color`
+	 * - MS-PPT > Format Shape > Text Options > Text Fill & Outline > Text Fill > Gradient fill
+	 * @example { angle: 0, stops: [{ position: 0, color: 'FF0000' }, { position: 100, color: '0000FF' }] }
+	 */
+	gradient?: TextGradientProps
+	/**
 	 * Font face name
 	 * @example 'Arial' // Arial font
 	 */
@@ -958,6 +965,49 @@ export interface TableRowSlide {
 export type TableRow = TableCell[]
 
 // text ===========================================================================================
+export interface TextGradientStop {
+	/**
+	 * Stop position (percent)
+	 * - range: 0-100
+	 * @example 0   // start
+	 * @example 100 // end
+	 */
+	position: number
+	/**
+	 * Stop color
+	 * - `HexColor` or `ThemeColor`
+	 */
+	color: Color
+	/**
+	 * Per-stop transparency (percent)
+	 * - range: 0-100
+	 * @default 0
+	 */
+	transparency?: number
+}
+export interface TextGradientProps {
+	/**
+	 * Gradient type
+	 * @default 'linear'
+	 */
+	type?: 'linear'
+	/**
+	 * Linear gradient angle (degrees, 0-360)
+	 * - 0 = left-to-right, 90 = top-to-bottom
+	 * @default 0
+	 */
+	angle?: number
+	/**
+	 * Rotate gradient with shape
+	 * @default true
+	 */
+	rotateWithShape?: boolean
+	/**
+	 * Gradient color stops (at least two required)
+	 * @example [{ position: 0, color: 'FF0000' }, { position: 100, color: '0000FF' }]
+	 */
+	stops: TextGradientStop[]
+}
 export interface TextGlowProps {
 	/**
 	 * Border color (hex format)

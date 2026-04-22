@@ -62,6 +62,31 @@ if (process.argv.length > 2) {
 	slide.addText("Node\nReady", {
 		x: 7.2, y: 2.0, w: 2.5, h: 2.3, fontSize: 28, color: "FFFFFF", align: "center", valign: "middle", fontFace: "Courier New"
 	});
+	// Gradient text samples
+	slide.addText("Linear Gradient Text (0°)", {
+		x: 0.5, y: 4.7, w: 9, h: 0.8, fontSize: 36, bold: true, align: "center",
+		gradient: {
+			angle: 0,
+			stops: [
+				{ position: 0, color: "FF0000" },
+				{ position: 100, color: "0000FF" },
+			],
+		},
+	});
+	slide.addText("Three-Stop Diagonal Gradient", {
+		x: 0.5, y: 5.6, w: 9, h: 0.8, fontSize: 32, bold: true, align: "center",
+		gradient: {
+			angle: 45,
+			stops: [
+				{ position: 0, color: "FF3B30" },
+				{ position: 50, color: "FFCC00" },
+				{ position: 100, color: "34C759" },
+			],
+		},
+	});
+	slide.addText("Mixed runs: ", {
+		x: 0.5, y: 6.5, w: 9, h: 0.8, fontSize: 28, align: "center",
+	});
 	// Image Test: URL
 	slide.addImage({
 		path: "https://raw.githubusercontent.com/gitbrent/PptxGenJS/master/demos/common/images/cc_logo.jpg",

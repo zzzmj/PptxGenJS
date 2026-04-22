@@ -3,7 +3,7 @@
  */
 
 import { EMU, REGEX_HEX_COLOR, DEF_FONT_COLOR, ONEPT, SchemeColor, SCHEME_COLORS } from './core-enums'
-import { PresLayout, TextGlowProps, PresSlide, ShapeFillProps, Color, ShapeLineProps, Coord, ShadowProps } from './core-interfaces'
+import { PresLayout, TextGlowProps, TextGradientProps, PresSlide, ShapeFillProps, Color, ShapeLineProps, Coord, ShadowProps } from './core-interfaces'
 
 /**
  * Translates any type of `x`/`y`/`w`/`h` prop to EMU
@@ -178,6 +178,35 @@ export function createGlowElement (options: TextGlowProps, defaults: TextGlowPro
 	strXml += '</a:glow>'
 
 	return strXml
+}
+
+/**
+ * Creates `a:gradFill` element for text run fills.
+ * @param {TextGradientProps} grad gradient properties
+ * @returns {string} XML string
+ * @see http://officeopenxml.com/drwSp-GradFill.php
+ */
+export function createGradFillElement (grad: TextGradientProps): string {
+	const stops = (grad.stops || []).slice().sort((a, b) => a.position - b.position)
+	if (stops.length < 2) {
+		console.warn('Text gradient requires at least 2 stops; falling back to empty fill')
+		return ''
+	}
+
+	const rotWithShape = grad.rotateWithShape === false ? '0' : '1'
+	const gsXml = stops.map(stop => {
+		const pos = Math.round(Math.max(0, Math.min(100, stop.position)) * 1000)
+		const alphaXml = stop.transparency
+			? `<a:alpha val="${Math.round((100 - stop.transparency) * 1000)}"/>`
+			: ''
+		return `<a:gs pos="${pos}">${createColorElement(stop.color, alphaXml)}</a:gs>`
+	}).join('')
+
+	// PPT angle unit = 1/60000 of a degree; normalize any value into [0, 360)
+	const angDeg = ((grad.angle || 0) % 360 + 360) % 360
+	const ang = Math.round(angDeg * 60000)
+
+	return `<a:gradFill flip="none" rotWithShape="${rotWithShape}"><a:gsLst>${gsXml}</a:gsLst><a:lin ang="${ang}" scaled="0"/></a:gradFill>`
 }
 
 /**
