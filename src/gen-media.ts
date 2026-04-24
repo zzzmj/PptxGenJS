@@ -5,6 +5,11 @@
 import { IMG_BROKEN } from './core-enums'
 import { PresSlide, SlideLayout, ISlideRelMedia } from './core-interfaces'
 
+// 1x1 transparent PNG used as a silent placeholder when media fails to load.
+// Chosen over the visible `IMG_BROKEN` icon so a single broken asset doesn't
+// visually disrupt the slide — the failure is surfaced via console.warn instead.
+const IMG_LOAD_FAIL_PLACEHOLDER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII='
+
 /**
  * Encode Image/Audio/Video into base64
  * @param {PresSlide | SlideLayout} layout - slide layout
@@ -63,36 +68,40 @@ export function encodeSlideMediaRels(layout: PresSlide | SlideLayout): Array<Pro
 								.forEach(dupe => (dupe.data = rel.data))
 							return 'done'
 						} catch (ex) {
-							rel.data = IMG_BROKEN
-							candidateRels
-								.filter(dupe => dupe.isDuplicate && dupe.path === rel.path)
-								.forEach(dupe => (dupe.data = rel.data))
-							throw new Error(`ERROR: Unable to read media: "${rel.path}"\n${String(ex)}`)
+							return usePlaceholderImage(rel, candidateRels, String(ex))
 						}
 					}
 
 					// ────────────  NODE HTTP(S)  ────────────
 					if (isNode && https && rel.path.startsWith('http')) {
 						return await new Promise<string>((resolve, reject) => {
+							// Guard against double-settle: both the request-level and response-level
+							// `error` events can fire for the same failure.
+							let settled = false
+							const settleWithPlaceholder = (reason: string): void => {
+								if (settled) return
+								settled = true
+								resolve(usePlaceholderImage(rel, candidateRels, reason))
+							}
 							https.get(rel.path, res => {
+								if (res.statusCode && res.statusCode >= 400) {
+									settleWithPlaceholder(`https.get: ${rel.path} (${res.statusCode})`)
+									return
+								}
 								let raw = ''
 								res.setEncoding('binary') // IMPORTANT: Only binary encoding works
 								res.on('data', chunk => (raw += chunk))
 								res.on('end', () => {
+									if (settled) return
+									settled = true
 									rel.data = Buffer.from(raw, 'binary').toString('base64')
 									candidateRels
 										.filter(dupe => dupe.isDuplicate && dupe.path === rel.path)
 										.forEach(dupe => (dupe.data = rel.data))
 									resolve('done')
 								})
-								res.on('error', () => {
-									rel.data = IMG_BROKEN
-									candidateRels
-										.filter(dupe => dupe.isDuplicate && dupe.path === rel.path)
-										.forEach(dupe => (dupe.data = rel.data))
-									reject(new Error(`ERROR! Unable to load image (https.get): ${rel.path}`))
-								})
-							})
+								res.on('error', () => settleWithPlaceholder(`https.get: ${rel.path}`))
+							}).on('error', () => settleWithPlaceholder(`https.get: ${rel.path}`))
 						})
 					}
 
@@ -101,6 +110,10 @@ export function encodeSlideMediaRels(layout: PresSlide | SlideLayout): Array<Pro
 						// A: build request
 						const xhr = new XMLHttpRequest()
 						xhr.onload = () => {
+							if (xhr.status >= 400) {
+								resolve(usePlaceholderImage(rel, candidateRels, `xhr.onload: ${rel.path} (${xhr.status})`))
+								return
+							}
 							const reader = new FileReader()
 							reader.onloadend = () => {
 								rel.data = reader.result as string
@@ -118,11 +131,7 @@ export function encodeSlideMediaRels(layout: PresSlide | SlideLayout): Array<Pro
 							reader.readAsDataURL(xhr.response)
 						}
 						xhr.onerror = () => {
-							rel.data = IMG_BROKEN
-							candidateRels
-								.filter(dupe => dupe.isDuplicate && dupe.path === rel.path)
-								.forEach(dupe => (dupe.data = rel.data))
-							reject(new Error(`ERROR! Unable to load image (xhr.onerror): ${rel.path}`))
+							resolve(usePlaceholderImage(rel, candidateRels, `xhr.onerror: ${rel.path}`))
 						}
 						// B: execute request
 						xhr.open('GET', rel.path)
@@ -187,12 +196,32 @@ async function createSvgPngPreview(rel: ISlideRelMedia): Promise<string> {
 			canvas = null
 		}
 		image.onerror = () => {
-			rel.data = IMG_BROKEN
-			reject(new Error(`ERROR! Unable to load image (image.onerror): ${rel.path}`))
+			resolve(usePlaceholderImage(rel, [], `createSvgPngPreview: ${rel.path}`))
 		}
 
 		// C: Load image
 		image.src = typeof rel.data === 'string' ? rel.data : IMG_BROKEN
+	})
+}
+
+function usePlaceholderImage(
+	rel: ISlideRelMedia,
+	candidateRels: ISlideRelMedia[],
+	reason: string
+): string {
+	console.warn(`WARN: Unable to load image, using placeholder: ${rel.path}${reason ? ` (${reason})` : ''}`)
+	setPlaceholderImage(rel, candidateRels, IMG_LOAD_FAIL_PLACEHOLDER)
+	return 'done'
+}
+
+function setPlaceholderImage(rel: ISlideRelMedia, candidateRels: ISlideRelMedia[], data: string): void {
+	const originalPath = rel.path
+	const target = rel.Target.replace(/\.[^.\/]+$/, '.png')
+	;[rel, ...candidateRels.filter(dupe => dupe.isDuplicate && dupe.path === originalPath)].forEach(item => {
+		item.type = 'image/png'
+		item.extn = 'png'
+		item.data = data
+		item.Target = target
 	})
 }
 
